@@ -1,0 +1,1353 @@
+#
+# makefile defs (CC, LD,a.s.o)
+#
+# Environment variables:
+#   PREFIX, LOCALBASE, SYSBASE, BASEDIR
+#   INSTALL, TAR , CC, LEX, YACC,
+#   CPU, CC_EXTRA_OPTS, LD_EXTRA_OPTS
+#   exclude_modules, skip_modules, include_modules
+#   extra_defs
+#
+# History:
+# --------
+#  2010-01-08  imported (bogdan) 
+
+# check if already included/exported
+
+ifeq ($(makefile_defs), 1)
+else
+makefile_defs=1
+export makefile_defs
+
+# main binary name
+MAIN_NAME=opensips
+
+#version number
+VERSION = 2
+PATCHLEVEL = 0
+SUBLEVEL = 0
+EXTRAVERSION =-dev0
+
+RELEASE=$(VERSION).$(PATCHLEVEL).$(SUBLEVEL)$(EXTRAVERSION)
+OS = $(shell uname -s | sed -e s/SunOS/solaris/ | tr "[A-Z/]" "[a-z_]")
+
+ifeq ($(OS),solaris)
+	GETARCH=uname -p
+	
+	# CHIP Detection
+	CHIP = $(shell /usr/sbin/modinfo | grep SUNW | head | cut -d, -f2 | \
+			awk '{print $1}' | tr "[A-Z]" "[a-z]" | sed 's/ ()//g' )
+else
+	GETARCH=uname -m
+endif
+
+ARCH := $(shell $(GETARCH) |sed -e s/i.86/i386/ -e s/sun4u/sparc64/  \
+			-e s/armv4l/arm/ -e "s/Power Macintosh/ppc/" \
+			-e s/sun4v/sparc64/ -e "s/cobalt/mips2/" \
+			-e s/amd64/x86_64/ )
+
+# fix sparc -> sparc64
+ifeq ($(ARCH),sparc)
+	ifeq ($(shell uname -m),sun4u)
+		ARCH := sparc64
+	endif
+	ifeq ($(shell uname -m),sun4v)
+		ARCH := sparc64
+	endif
+endif
+
+# additional check for architecture on solaris
+ifeq ($(OS),solaris)
+	ifeq ($(shell isainfo -k),amd64)
+		ARCH := x86_64
+	endif
+endif
+
+# Check of SMP systems
+ifeq ($(OS),solaris)
+	CPU=$(shell /usr/sbin/psrinfo | grep -i online | wc -l)
+	ifeq ($(CPU),1)
+		ISSMP ?= no
+	else
+		ISSMP ?= yes
+	endif
+else
+	SMP_STR = $(shell uname -v | grep -i "SMP")
+	ifeq (,$(SMP_STR))
+		ISSMP ?= no
+	else
+		ISSMP ?= yes
+	endif
+endif
+
+OSREL = $(shell uname -r)
+# numerical version (good for comparisons: A.B.C => A*1000000+B*1000+C)
+OSREL_N= $(shell echo $(OSREL) | sed -e 's/^[^0-9]*//' \
+		-e 's/^\([0-9][0-9]*\(\.[0-9][0-9]*\)*\).*$$/\1/g' | \
+		(IFS=. read A B C D; R=0; \
+		[ -n "$$A" ] && R=`expr $$R \* 1000 + $$A` && \
+		[ -n "$$B" ] && R=`expr $$R \* 1000 + $$B` && \
+		[ -n "$$C" ] && R=`expr $$R \* 1000 + $$C`; echo $$R ) )
+
+# no Debug (-g) ?
+DEBUGSYM=-g
+ifdef NODEBUGSYM
+	DEBUGSYM:=
+endif
+
+# nicer compilation?
+Q=
+NICER ?= 
+ifneq ($(NICER),)
+	export Q=@
+endif
+
+# TLS support
+TLS ?= 
+ifneq ($(TLS),)
+	RELEASE:=$(RELEASE)-tls
+else
+	RELEASE:=$(RELEASE)-notls
+endif
+# extra CC command line options (e.g  -march=athlon-mp)
+CC_EXTRA_OPTS ?=
+
+# cross compiling?
+CROSS_COMPILE ?=
+
+# system base
+SYSBASE ?= /usr
+
+# dirs 
+cfg-dir = etc/$(MAIN_NAME)/
+bin-dir = sbin/
+
+ARCH_B = $(shell echo $(ARCH) | sed -e 's/.*64.*/64b/')
+ifeq ($(ARCH_B),64b)
+	LIBDIR ?= lib64
+else
+	LIBDIR ?= lib
+	# assume 32b - it is not really used further
+	ARCH_B=32b
+endif
+
+lib-dir = $(LIBDIR)/$(MAIN_NAME)
+modules-dir = $(LIBDIR)/$(MAIN_NAME)/modules/
+
+ifeq ($(OS), linux)
+	doc-dir = share/doc/$(MAIN_NAME)/
+	man-dir = share/man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/local
+else
+ifeq ($(OS), freebsd)
+	doc-dir = share/doc/$(MAIN_NAME)/
+	man-dir = man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/local
+else
+ifeq ($(OS), openbsd)
+	doc-dir = share/doc/$(MAIN_NAME)/
+	man-dir = man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/local
+else
+ifeq ($(OS), netbsd)
+	doc-dir = share/doc/$(MAIN_NAME)
+	man-dir = man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/pkg
+else
+ifeq ($(OS), darwin)
+	doc-dir = share/doc/$(MAIN_NAME)/
+	man-dir = man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/local
+else
+ifeq ($(OS), gnu_kfreebsd)
+	doc-dir = share/doc/$(MAIN_NAME)/
+	man-dir = share/man/
+	data-dir = share/$(MAIN_NAME)/
+	LOCALBASE = ?= $(SYSBASE)/local
+else
+ifeq ($(OS), solaris)
+	doc-dir = doc/$(MAIN_NAME)/
+	man-dir = man/
+	data-dir = $(MAIN_NAME)/
+	LOCALBASE = $(SYSBASE)
+else
+	doc-dir = doc/$(MAIN_NAME)/
+	man-dir = man/
+	data-dir = $(MAIN_NAME)/
+	LOCALBASE ?= $(SYSBASE)/local
+endif
+endif
+endif
+endif
+endif
+endif
+endif
+
+ # install location
+DESTDIR ?= $(LOCALBASE)
+PREFIX ?= $(DESTDIR)
+prefix = $(PREFIX)
+# install path is $(basedir) $(prefix) 
+# example:
+#  creating a bin. archive in /tmp, which unpacks in /usr/local
+#  basedir=/tmp
+#  prefix=/usr/local
+
+BASEDIR ?=
+basedir = $(BASEDIR)
+# install prefixes for various stuff
+cfg-prefix = $(basedir)$(prefix)
+bin-prefix = $(basedir)$(prefix)
+modules-prefix = $(basedir)$(prefix)
+doc-prefix = $(basedir)$(prefix)
+man-prefix = $(basedir)$(prefix)
+ut-prefix = $(basedir)$(prefix)
+data-prefix = $(basedir)$(prefix)
+
+# target dirs for various stuff
+cfg-target = $(prefix)/$(cfg-dir)
+bin-target = $(prefix)/$(bin-dir)
+lib-target = $(prefix)/$(lib-dir)
+modules-target = $(prefix)/$(modules-dir)
+doc-target = $(prefix)/$(doc-dir)
+data-target = $(prefix)/$(data-dir)
+
+
+ifeq ($(OS), solaris)
+#use GNU versions
+INSTALL ?= ginstall
+TAR ?= gtar
+else
+INSTALL ?= install 
+TAR ?= tar
+endif
+
+INSTALL_TOUCH = touch          # used to create the file first (good to 
+                               #  make solaris install work)
+INSTALL_CFG = $(INSTALL) -m 644
+INSTALL_BIN = $(INSTALL) -m 755
+INSTALL_MODULES = $(INSTALL) -m 755
+INSTALL_DOC = $(INSTALL) -m 644
+INSTALL_MAN = $(INSTALL) -m 644
+
+#set some vars from the environment (and not make builtins)
+CC   := $(shell echo "$${CC}")
+LEX  := $(shell echo "$${LEX}")
+YACC := $(shell echo "$${YACC}")
+ 
+ifeq ($(DBXML2HTML),)
+DBXML2HTML = $(shell which xsltproc)
+endif
+
+ifneq ($(DBXML2HTML),)
+ifeq ($(DBHTMLCSS),)
+DBHTMLCSS = ../../../doc/module-docbook.css
+endif
+DBHTMLXSL = /usr/share/xml/docbook/stylesheet/nwalsh/html/docbook.xsl
+DBXML2HTMLPARAMS = --stringparam section.autolabel 1
+DBXML2HTMLPARAMS += --stringparam section.label.includes.component.label 1
+DBXML2HTMLPARAMS += --stringparam generate.toc "book toc,title,figure,table,example" 
+DBXML2HTMLPARAMS += --stringparam html.stylesheet $(DBHTMLCSS)
+endif
+
+ifeq ($(DBHTML2TXT),)
+DBHTML2TXT = $(shell which lynx)
+endif
+
+ifneq ($(DBHTML2TXT),)
+DBHTML2TXTPARAMS = -force_html -dump -nolist -width=72
+endif
+
+ifeq ($(DBXML2PDF),)
+DBXML2PDF = $(shell which docbook2pdf)
+endif
+
+# find compiler name & version
+ifeq ($(CC),)
+	CC=gcc
+endif
+LD= $(CC)
+CC_LONGVER=$(shell if  $(CC) -v 2>/dev/null; then \
+						$(CC) -v 2>&1 ;\
+					else \
+						$(CC) -V 2>&1 ; \
+					fi )
+MKTAGS=ctags -R .
+
+#find-out the compiler's name
+
+ifneq (,$(findstring gcc, $(CC_LONGVER)))
+	CC_NAME=gcc
+	CC_VER=$(word 1,$(CC)) $(shell $(CC) - -dumpversion|head -n 1|cut -d" " -f 3|\
+			 sed -e 's/^.*\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/' \
+			 	 -e 's/^[^0-9].*\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/')
+	# sun sed is a little brain damaged => this complicated expression
+	MKDEP=$(CC) -MM 
+	CC_SHORTVER=$(shell echo "$(CC_VER)" | cut -d" " -f 2| \
+				 sed -e 's/[^0-9]*-\(.*\)/\1/'| \
+				 sed -e 's/\([0-9][0-9]*\.[0-9][0-9]*\).*/\1/' )
+	#transform gcc version into 2.9x, 3.x or 4.x
+	CC_CLASS=$(shell echo "$(CC_SHORTVER)" | \
+				 sed -e 's/2\.9.*/2.9x/' -e 's/3\.[0-9]/3.x/' \
+				 -e 's/4\.[0-9]/4.x/')
+endif
+
+ifneq (, $(findstring Sun, $(CC_LONGVER)))
+	CC_NAME=suncc
+	CC_SHORTVER=$(shell echo "$(CC_LONGVER)"|head -n 1| \
+					sed -e 's/.*\([0-9]\.[0-9]\).*/\1/g' )
+	CC_VER=$(CC) $(CC_SHORTVER)
+	MKDEP=$(CC) -xM1 
+endif
+
+ifneq (, $(findstring Intel(R) C++ Compiler, $(CC_LONGVER)))
+	# very nice: gcc compatible
+	CC_NAME=icc
+	CC_FULLVER=$(shell echo "$(CC_LONGVER)"|head -n 1| \
+					sed -e 's/.*Version \([0-9]\.[0-9]\.[0-9]*\).*/\1/g' )
+	CC_SHORTVER=$(shell echo "$(CC_FULLVER)" | cut -d. -f1,2 )
+	CC_VER=$(CC) $(CC_FULLVER)
+	MKDEP=$(CC) -MM 
+endif
+
+
+ifeq (,$(CC_NAME))
+#not found
+	CC_NAME=$(CC)
+	CC_SHORTVER=unknown
+	CC_VER=unknown
+	MKDEP=gcc -MM 
+$(warning	Unknown compiler $(CC)\; supported compilers: \
+			gcc, sun cc, intel icc )
+endif
+export CC_NAME
+
+
+# compile-time options
+#
+# -DNO_DEBUG
+#		turns off some of the debug messages (DBG(...)).
+# -DNO_LOG
+#		completely turns of all the logging (and DBG(...))
+# -DEXTRA_DEBUG
+#		compiles in some extra debugging code
+# -DDBG_QM_MALLOC
+#		qm_malloc debug code, will cause pkg_malloc and shm_malloc
+#		to keep and display lot of debuging information: file name,
+#		function, line number of malloc/free call for each block,
+#		extra error checking (trying to free the same pointer
+#		twice, trying to free a pointer alloc'ed with a different
+#		malloc etc.)
+# -DVQ_MALLOC
+#		additional option of PKG_MALLOC which utilizes faster then the
+#		QM version
+#		(this is not true anymore, q_malloc performs approx. the same)
+# -DF_MALLOC
+#		an even faster malloc, not recommended for debugging
+# -DDBG_MALLOC
+#		issues additional debugging information if lock/unlock is called
+# -DFAST_LOCK
+#		uses fast architecture specific locking (see the arch specific section)
+# -DUSE_SYSV_SEM
+#		uses SYSV sems for locking (this is slower and supports only a
+#		limited number of locks)
+# -DUSE_PTHREAD_MUTEX
+#		uses pthread mutexes, faster than SYSV or posix semaphores, but it do
+#		not work on all systems inter-processes (e.g. linux)
+# -DUSE_POSIX_SEM
+#		uses posix semaphores for locking (faster than SYSV)
+# -DBUSY_WAIT
+#		uses busy waiting on the lock (FAST_LOCK)
+# -DADAPTIVE_WAIT
+#		try busy waiting for a while and if the lock is still held go to
+#		force reschedule (FAST_LOCK)
+# -DADAPTIVE_WAIT_LOOPS=number
+#		number of loops we busy wait, after "number" loops have elapsed we 
+#		force a reschedule (FAST_LOCK)
+# -DNOSMP
+#		don't use smp compliant locking (faster but won't work on SMP machines)
+#		(not yet enabled) (FAST_LOCK)
+# -DUSE_TCP
+#		compiles in tcp support
+# -DDISABLE_NAGLE
+#		disable the tcp Nagle algorithm (lower delay)
+# -DUSE_TLS
+#		compiles in tls support, requires -DUSE_TCP. Please use
+#		make TLS=1 instead. (tls support is experimental for now)
+# -DHAVE_RESOLV_RES
+#		support for changing some of the resolver parameters present
+#		 (_res structure in <resolv.h>)
+# -DSTATISTICS
+#		enables statistics manager - support for collecting statistics
+#		from core and all modules; all info may be fetch via FIFO/UNIX_SOCK
+
+
+DEFS+= $(extra_defs) \
+	 -DINSTALL_DIR='"$(shell pwd)"'\
+	 -DNAME='"$(MAIN_NAME)"' -DVERSION='"$(RELEASE)"' -DARCH='"$(ARCH)"' \
+	 -DOS='"$(OS)"' -DCOMPILER='"$(CC_VER)"' -D__CPU_$(ARCH) -D__OS_$(OS) \
+	 -D__SMP_$(ISSMP) -DCFG_DIR='"$(cfg-target)"'\
+	 -DUSE_IPV6 \
+	 -DUSE_MCAST \
+	 -DUSE_TCP \
+	 -DDISABLE_NAGLE \
+	 -DHAVE_RESOLV_RES \
+	 -DDBG_QM_MALLOC 
+	 #-DF_MALLOC 
+	 #-DSTATISTICS \
+	 #-DDBG_F_MALLOC \
+	 #-DNO_DEBUG \
+	 #-DNO_LOG \
+	 #-DVQ_MALLOC  \
+	 #-DDBG_LOCK \
+	 #-DNOSMP \
+	 #-DEXTRA_DEBUG \
+
+#PROFILE=  -pg #set this if you want profiling
+
+# WARNING: do not add mode=debug or mode=release anymore in the Makefile,
+# use make mode=debug all instead. Anyway now by default opensips 
+# is  compiled w/ debugging symbols in all cases (-g). --andrei
+
+ifneq ($(FREERADIUS),)
+	DEFS+= -DUSE_FREERADIUS
+	RADIUS_LIB= -lfreeradius-client
+else
+	RADIUS_LIB= -lradiusclient-ng
+endif
+
+ifneq ($(TLS),)
+	DEFS+= -DUSE_TLS
+endif
+
+ifneq ($(SCTP),)
+	DEFS+= -DUSE_SCTP
+endif
+
+ifeq ($(mode),)
+	mode = release
+endif
+
+ifeq ($(mode),debug)
+	DEFS+= -DEXTRA_DEBUG
+endif
+
+# platform dependent settings
+
+# find ld & as name (gnu or solaris)
+ifeq ($(OS), solaris)
+ifeq ($(CC_NAME), gcc)
+		LDGCC=$(shell $(CC) -v 2>&1 | grep with-ld| \
+				   sed -e 's/.*--with-ld=\([^ ][^ ]*\).*/\1/' )
+		ASGCC=$(shell $(CC) -v 2>&1 | grep with-as| \
+				   sed -e 's/.*--with-as=\([^ ][^ ]*\).*/\1/' )
+		LDPATH=$(shell  if [ -z "$(LDGCC)" ] ; then echo "ld" ;\
+						else \
+						if $(LDGCC) -V 2>/dev/null 1>/dev/null; then \
+							echo $(LDGCC); \
+						else echo "ld" ; \
+						fi\
+						fi)
+		ASPATH=$(shell  if [ -z "$(ASGCC)" ] ; then echo "as" ;\
+						else \
+						if $(ASGCC) -V 2>/dev/null 1>/dev/null; then \
+							echo $(ASGCC); \
+						else echo "as" ; \
+						fi\
+						fi)
+
+		LDTYPE=$(shell if $(LDPATH) -V 1>/dev/null  2>/dev/null; then \
+							if $(LDPATH) -V 2>&1|grep GNU >/dev/null; \
+							then echo gnu; \
+							else \
+							if $(LDPATH) -V 2>&1|grep Solaris >/dev/null;\
+							then echo solaris; \
+							else \
+								echo unknown ; \
+							fi \
+							fi \
+						fi)
+		ASTYPE=$(shell if $(ASPATH) -V 1>/dev/null  2>/dev/null </dev/null; \
+						then \
+							if $(ASPATH) -V 2>&1 </dev/null |grep GNU >/dev/null; \
+							then echo gnu; \
+							else \
+							if $(ASPATH) -V 2>&1 </dev/null |grep Sun >/dev/null;\
+							then echo solaris; \
+							else \
+								echo unknown ; \
+							fi \
+							fi \
+						fi)
+#$(warning "using ld=$(LDPATH)/$(LDTYPE), as=$(ASPATH)/$(ASTYPE)")
+
+endif
+endif
+
+# arh. specific definitions
+ifeq ($(ARCH), i386)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), x86_64)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), sparc64)
+ifeq 	($(CC_NAME), gcc)
+	use_fast_lock=yes
+endif
+endif
+
+ifeq ($(ARCH), sparc)
+	# smp no supported on sparc32
+	DEFS+= -DNOSMP 
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), arm)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), ppc)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), ppc64)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), mips)
+# mips1 arch. (e.g. R3000) - no hardware locking support
+	use_fast_lock=no
+endif
+
+ifeq ($(ARCH), mips2)
+# mips2 arch and newer (mips3=R4000, mips4=R5000 a.s.o)
+	use_fast_lock=yes
+endif
+
+ifeq ($(ARCH), alpha)
+	use_fast_lock=yes
+endif
+
+ifeq ($(use_fast_lock), yes)
+	DEFS+= -DFAST_LOCK -DADAPTIVE_WAIT -DADAPTIVE_WAIT_LOOPS=1024 
+	found_lock_method=yes
+endif
+
+CFLAGS=$(shell echo "$${CFLAGS}")
+LDFLAGS+=
+
+ifeq (,$(CFLAGS))
+# setting CFLAGS
+ifeq ($(mode), release)
+
+#common stuff
+CFLAGS+=$(DEBUGSYM)
+
+#if i386
+ifeq	($(ARCH), i386)
+	# These CPU optimization assumes that you run a Intel processor.
+	# If you use a AMD CPU, you could ajust the settings here for better 
+	# performance. For gcc 4.x use CPU_TYPE ?= athlon-xp
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops  -Wcast-align $(PROFILE) \
+					-Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					ARCH_VER=$(shell $(GETARCH))
+ifeq 				($(ARCH_VER), i386)
+						CPU_TYPE ?= i686
+else
+						CPU_TYPE ?= prescott
+endif
+					CFLAGS+=-minline-all-stringops \
+							-falign-loops \
+							-ftree-vectorize \
+							-mtune=$(CPU_TYPE) \
+					-Wold-style-definition -Wmissing-field-initializers -Wredundant-decls
+
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CPU_TYPE ?= pentium4
+					CFLAGS+=-minline-all-stringops \
+							-falign-loops
+ifeq				(X,$(shell echo "$(CC_SHORTVER)" | sed -e 's/3\.[0-3]/X/'))
+					CFLAGS+=-mcpu=$(CPU_TYPE)
+else
+					CFLAGS+=-mtune=$(CPU_TYPE)
+endif
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc >= 3.1 \
+					for better results)
+
+					CFLAGS+=-m486 \
+							-malign-loops=4
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version  ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+ifeq		($(CC_NAME), icc)
+			CFLAGS+=-O3  -ipo -ipo_obj -unroll  $(PROFILE) \
+					 -tpp6 -xK  #-openmp  #optimize for PIII 
+				# -prefetch doesn't seem to work
+				#( ty to inline acroos files, unroll loops,prefetch,
+				# optimize for PIII, use PIII instructions & vect.,
+				# mutlithread loops)
+else		#CC_NAME, icc
+ifeq		($(CC_NAME), suncc)
+			CFLAGS+=-xO5 -fast -native -xCC \
+					-xc99=no_lib # C99 support
+			# -Dinline="" # add this if cc < 5.3 (define inline as null)
+else
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, suncc
+endif		#CC_NAME, icc
+endif		#CC_NAME, gcc
+endif	#ARCH, i386
+
+#x86_64
+ifeq	($(ARCH), x86_64)
+	# These CPU optimization assumes that you run a Intel 64 processor.
+	# If you use a AMD 64 CPU, you could ajust the settings here for better
+	# performance. For gcc 4.x use CPU_TYPE ?= athlon64
+	# Perhaps it makes sense to use '-m64' here?
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops  -Wcast-align $(PROFILE) \
+					-Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					CPU_TYPE ?= nocona
+					CFLAGS+=-minline-all-stringops \
+							-falign-loops \
+							-ftree-vectorize \
+							-mtune=$(CPU_TYPE) \
+					-Wold-style-definition -Wmissing-field-initializers -Wredundant-decls
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CPU_TYPE ?= nocona
+					CFLAGS+=-minline-all-stringops \
+							-falign-loops \
+							-mtune=$(CPU_TYPE)
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc >= 3.1 \
+					for better results)
+
+					CFLAGS+=-m486 \
+							-malign-loops=4
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version  ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+ifeq		($(CC_NAME), icc)
+			CFLAGS+=-O3 -ipo -ipo_obj -unroll  $(PROFILE) \
+					 -tpp6 -xK  #-openmp  #optimize for PIII 
+				# -prefetch doesn't seem to work
+				#( ty to inline acroos files, unroll loops,prefetch,
+				# optimize for PIII, use PIII instructions & vect.,
+				# mutlithread loops)
+else
+ifeq		($(CC_NAME), suncc)
+			CFLAGS+=-xO5 -fast -native -xCC \
+				-xc99=no_lib # C99 support
+				# -Dinline="" # add this if cc < 5.3 (define inline as null)
+else
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, icc
+endif		#CC_NAME, gcc
+endif		#CC_NAME, suncc
+endif	#ARCH, x86_64
+
+	#if sparc
+ifeq	($(ARCH), sparc64)
+			#if gcc
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops  $(PROFILE) \
+					-Wall\
+					#-Wcast-align \
+					#-Wmissing-prototypes 
+				#if gcc 4.x
+ifeq			($(CC_CLASS), 4.x)
+
+					# Processors of Family UltraSparc II
+					ifeq ($(CHIP), ultrasparc-ii)
+						CFLAGS+= -ftree-vectorize -mcpu=ultrasparc -mtune=ultrasparc -mvis 
+					endif
+
+					# Processors of Family UltraSparc III (III, III, IIIi, IIICu)
+					ifeq ($(CHIP), ultrasparc-iiii)
+						CFLAGS+= -ftree-vectorize -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					ifeq ($(CHIP), ultrasparc-iii)
+						CFLAGS+= -ftree-vectorize -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					ifeq ($(CHIP), ultrasparc-iiicu)
+						CFLAGS+= -ftree-vectorize -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					# Processors of Family UltraSparc T1
+					ifeq ($(CHIP), ultrasparc-t1)
+						# niagara switch is not supported on GCC < 4.2
+						# Sets to default ultrasparc
+						ifeq ($(CC_SHORTVER), 4.2)
+							CFLAGS+= -ftree-vectorize -mcpu=niagara -mtune=niagara -mvis
+						else
+							ifeq ($(CC_SHORTVER), 4.3)
+								CFLAGS+= -ftree-vectorize -mcpu=niagara -mtune=niagara -mvis
+							else
+								CFLAGS+= -ftree-vectorize -mcpu=ultrasparc -mtune=ultrasparc -mvis
+							endif
+						endif
+					endif
+
+					# If processor detection fails, defaults to UltraSPARC without VIS
+					ifeq (,$(CHIP))
+						#CPU_TYPE=ultrasparc
+						CFLAGS += -mcpu=ultrasparc -mtune=ultrasparc 
+					endif
+
+					# use -m64 to force 64 bit (but add it also to LDFLAGS), 
+					# -m32 for 32 bit (default on solaris),
+					# nothing for arch. default
+					# -mcpu=v9 or ultrasparc? # -mtune implied by -mcpu
+					#-mno-epilogue #try to inline function exit code
+					#-mflat # omit save/restore
+					#-,faster-structs #faster non Sparc ABI structure copy ops
+
+else
+				#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+
+					# Processors of Family UltraSparc II
+					ifeq ($(CHIP), ultrasparc-ii)
+						#CPU_TYPE=ultrasparc
+						CFLAGS+= -mcpu=ultrasparc -mtune=ultrasparc -mvis 
+					endif
+
+					# Processors of Family UltraSparc III
+					ifeq ($(CHIP), ultrasparc-iiii)
+						CFLAGS+= -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					ifeq ($(CHIP), ultrasparc-iiii)
+						CFLAGS+= -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					ifeq ($(CHIP), ultrasparc-iiicu)
+						CFLAGS+= -mcpu=ultrasparc3 -mtune=ultrasparc3 -mvis
+					endif
+
+					# Processors of Family UltraSparc T1
+					ifeq ($(CHIP), ultrasparc-t1)
+						# niagara switch is not supported on GCC < 4.2
+						# Sets to default ultrasparc
+						CFLAGS+= -mcpu=ultrasparc -mtune=ultrasparc -mvis
+					endif
+
+					# If processor detection fails, defaults to UltraSPARC without VIS
+					ifeq (,$(CHIP))
+						#CPU_TYPE=ultrasparc
+						CFLAGS += -mcpu=ultrasparc -mtune=ultrasparc 
+					endif
+
+					# use -m64 to force 64 bit (but add it also to LDFLAGS), 
+					# -m32 for 32 bit (default on solaris),
+					# nothing for arch. default
+					# -mcpu=v9 or ultrasparc? # -mtune implied by -mcpu
+					#-mno-epilogue #try to inline function exit code
+					#-mflat # omit save/restore
+					#-,faster-structs #faster non Sparc ABI structure copy ops
+
+else			# CC_CLASS, 3.0
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc >= 3.1 \
+					for better results)
+ifneq				($(OS), netbsd)
+						# on netbsd/sparc64,  gcc 2.95.3 does not compile
+						# opensips with -mv8
+						CFLAGS+= -mv8 
+endif
+ifeq					($(ASTYPE), solaris)
+							CFLAGS+= -Wa,-xarch=v8plus
+endif					
+else			#CC_CLASS, 2.9x
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+
+					CFLAGS+= -mv8 
+ifeq					($(ASTYPE), solaris)
+							CFLAGS+= -Wa,-xarch=v8plus
+endif					
+
+endif			#CC_CLASS, 2.9x
+endif			#CC_CLASS, 3.x
+endif			#CC_CLASS, 4.x
+
+else		#CC_NAME, gcc
+ifeq		($(CC_NAME), suncc)
+			CFLAGS+=-xO5 -fast -native -xarch=v8plusa -xCC \
+					-xc99=no_lib # C99 support
+			# -Dinline="" # add this if cc < 5.3 (define inline as null)
+else
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, suncc
+endif		#CC_NAME, gcc
+endif	#ARCH, sparc64
+
+	#if ipaq/netwinder
+ifeq	($(ARCH), arm)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops  -Wcast-align $(PROFILE) \
+					-Wall   
+			#if gcc 4.x+
+ifeq			($(CC_CLASS), 4.x)
+					CFLAGS+=-mcpu=strongarm1100 -minline-all-stringops \
+							-ftree-vectorize
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+= -mcpu=strongarm1100
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+					
+					CFLAGS+=
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+	
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+	
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, arm 
+
+	#if  mips (R3000)
+ifeq	($(ARCH), mips)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops  -Wcast-align $(PROFILE) \
+					-Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					CFLAGS+=-mcpu=r3000 -minline-all-stringops \
+							-ftree-vectorize
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+= -mcpu=r3000
+							#-mcpu=athlon
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+
+					CFLAGS+=-mcpu=r3000
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, mips
+
+	#if  >=mips2 (R4000, R5000, R6000 ....)
+ifeq	($(ARCH), mips2)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -mips2 -funroll-loops $(PROFILE) \
+					-Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					CFLAGS+=-minline-all-stringops -ftree-vectorize
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+=
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+					CFLAGS+=
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, mips2
+
+#if  alpha
+ifeq	($(ARCH), alpha)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops $(PROFILE)  -Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					CFLAGS+=-minline-all-stringops
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+=
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+					CFLAGS+=
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, alpha 
+
+#if  ppc
+ifeq	($(ARCH), ppc)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops $(PROFILE)  -Wall 
+			#if gcc 4.0+
+ifeq			($(CC_CLASS), 4.x)
+					CPU_TYPE ?= powerpc
+					CFLAGS+=-ftree-vectorize \
+							-mtune=$(CPU_TYPE) -maltivec
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+=
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+					CFLAGS+=
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, ppc 
+
+#if  ppc64
+ifeq	($(ARCH), ppc64)
+		# if gcc 
+ifeq		($(CC_NAME), gcc)
+				#common stuff
+				CFLAGS+=-O9 -funroll-loops $(PROFILE)  -Wall 
+ifeq			($(CC_CLASS), 4.x)
+					CPU_TYPE ?= powerpc64
+					CFLAGS+=-ftree-vectorize \
+							-mtune=$(CPU_TYPE) -maltivec
+else
+			#if gcc 3.0+
+ifeq			($(CC_CLASS), 3.x)
+					CFLAGS+=
+else
+ifeq			($(CC_CLASS), 2.9x) #older gcc version (2.9[1-5])
+$(warning 			Old gcc detected ($(CC_SHORTVER)), use  gcc 3.0.x \
+					for better results)
+					CFLAGS+=
+else
+				#really old version
+$(warning			You are using an old and unsupported gcc \
+					 version ($(CC_SHORTVER)), compile at your own risk!)
+	
+endif			# CC_CLASS, 2.9x
+endif			# CC_CLASS, 3.x
+endif			# CC_CLASS, 4.x
+	
+else		# CC_NAME, gcc
+				#other compilers
+$(error 			Unsupported compiler ($(CC):$(CC_NAME)), try gcc)
+endif		#CC_NAME, gcc
+endif	#ARCH, ppc 
+
+endif   # CFLAGS not set
+
+CFLAGS+= $(CC_EXTRA_OPTS)
+
+LD_EXTRA_OPTS ?=
+
+# setting LDFLAGS
+ifeq	($(CC_NAME), gcc)
+ifeq		($(LDTYPE), solaris)
+		# solaris ld
+		LDFLAGS+=-O2 $(PROFILE)
+		LIB_LDFLAGS=-G $(LDFLAGS)
+else		
+		#gcc and maybe others, => gnu ld
+		LDFLAGS+=-Wl,-O2 -Wl,-E $(PROFILE) 
+		LIB_LDFLAGS=-shared $(LDFLAGS)
+endif
+endif
+ifeq	($(CC_NAME), icc)
+	#gcc and maybe others
+	LDFLAGS+=-Wl,-O2 -Wl,-E $(PROFILE) 
+	LIB_LDFLAGS=-shared $(LDFLAGS)
+endif
+ifeq	($(CC_NAME), suncc)
+	LDFLAGS+=-xO5 $(PROFILE)
+	LIB_LDFLAGS=-G $(LDFLAGS)
+endif
+	# we need -fPIC -DPIC only for shared objects, we don't need them for
+	# the executable file, because it's always loaded at a fixed address
+	# -andrei
+else	#mode,release
+ifeq	($(CC_NAME), gcc)
+		CFLAGS +=-Wcast-align $(PROFILE)
+ifeq		($(ARCH), sparc64)
+			CFLAGS+= -mcpu=ultrasparc 
+endif
+ifeq		($(LDTYPE), solaris)
+			#solaris ld
+			LDFLAGS+=$(PROFILE)
+			LIB_LDFLAGS=-G $(LDFLAGS)
+else
+			#gnu or other ld type
+			LDFLAGS+=-Wl,-E $(PROFILE)
+			LIB_LDFLAGS=-shared $(LDFLAGS)
+endif
+endif
+ifeq	($(CC_NAME), icc)
+		CFLAGS+= $(PROFILE)
+		LDFLAGS+=-Wl,-E $(PROFILE)
+		LIB_LDFLAGS=-shared $(LDFLAGS)
+endif
+ifeq	($(CC_NAME), suncc)
+		CFLAGS+=$(PROFILE)
+		LDFLAGS+=$(PROFILE)
+		LIB_LDFLAGS=-G $(LDFLAGS)
+endif
+
+endif #mode=release
+
+
+#*FLAGS used for compiling the modules
+ifeq	($(CC_NAME), gcc)
+LIB_CFLAGS=-fPIC -DPIC $(CFLAGS)
+endif
+ifeq	($(CC_NAME), icc)
+LIB_CFLAGS=-Kpic $(CFLAGS)
+endif
+ifeq	($(CC_NAME), suncc)
+#LIB_CFLAGS=-xcode=pic32  $(CFLAGS)
+LIB_CFLAGS=-Kpic  $(CFLAGS)
+endif
+
+DEFAULT_YACC=bison
+
+# on solaris add -lxnet (e.g. LIBS= -lxnet)
+LIBS= -ldl -lresolv -lrt -lpthread -lcares 
+
+#os specific stuff
+ifeq ($(OS), linux)
+	DEFS+=-DHAVE_GETHOSTBYNAME2 -DHAVE_UNION_SEMUN -DHAVE_SCHED_YIELD \
+			-DHAVE_MSG_NOSIGNAL -DHAVE_MSGHDR_MSG_CONTROL -DHAVE_ALLOCA_H \
+			-DHAVE_TIMEGM
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_SYSV_SEM  # try posix sems
+		found_lock_method=yes
+	endif
+	# check for >= 2.5.44
+	ifeq ($(shell [ $(OSREL_N) -ge 2005044 ] && echo has_epoll), has_epoll)
+		ifeq ($(NO_EPOLL),)
+			DEFS+=-DHAVE_EPOLL
+			# linux + gcc >= 3.0 + -malign-double + epoll => problems
+			CFLAGS:=$(filter-out -malign-double, $(CFLAGS))
+		endif
+	endif
+	# check for >= 2.2.0
+	ifeq ($(shell [ $(OSREL_N) -ge 2002000 ] && echo has_sigio), has_sigio)
+		ifeq ($(NO_SIGIO),)
+			DEFS+=-DHAVE_SIGIO_RT
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+endif
+
+ifeq ($(OS), gnu_kfreebsd)
+	DEFS+=-DHAVE_GETHOSTBYNAME2 -DHAVE_UNION_SEMUN -DHAVE_SCHED_YIELD \
+			-DHAVE_MSG_NOSIGNAL -DHAVE_MSGHDR_MSG_CONTROL -DHAVE_ALLOCA_H \
+			-DHAVE_TIMEGM
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_SYSV_SEM  # try posix sems
+		found_lock_method=yes
+	endif
+	# check for ver >= 4.1
+	ifeq ($(shell [ $(OSREL_N) -gt 4001 ] && echo has_kqueue), has_kqueue)
+		ifeq ($(NO_KQUEUE),)
+			DEFS+=-DHAVE_KQUEUE
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+endif
+
+ifeq  ($(OS), solaris)
+	DEFS+= -DHAVE_GETIPNODEBYNAME -DHAVE_SYS_SOCKIO_H -DHAVE_SCHED_YIELD \
+			-DHAVE_ALLOCA_H -DUSE_SIGACTION -D_POSIX_PTHREAD_SEMANTICS
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
+		found_lock_method=yes
+	endif
+	LIBS= -lpthread  
+	# check for ver >= 5.7
+	ifeq ($(shell [ $(OSREL_N) -gt 5007 ] && echo has_devpoll), has_devpoll)
+		ifeq ($(NO_DEVPOLL),)
+			DEFS+=-DHAVE_DEVPOLL
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+	ifeq ($(mode), release)
+		#use these only if you're using gcc with Solaris ld
+		#LDFLAGS=-O2 $(PROFILE)
+		#LIB_LDFLAGS=-O2 -G
+	else
+		#LDFLAGS=$(PROFILE)
+		#LIB_LDFLAGS=-G
+	endif
+	DEFAULT_YACC=yacc
+
+ifeq ($(CC_NAME), suncc)
+	LIBS= -fast -ldl -lresolv -lpthread
+endif
+	OLD_SOLARIS= $(shell echo "$(OSREL)" | \
+				sed -e 's/^5\.[0-6][^0-9]*$$/yes/' )
+	LIBS+= -L$(LOCALBASE)/lib -lxnet -lnsl 
+ifeq	($(OLD_SOLARIS), yes)
+		LIBS+=-lposix4
+else
+		LIBS+=-lrt
+endif
+	# -lrt needed for sched_yield
+endif
+
+ifeq ($(OS), freebsd)
+	DEFS+=-DHAVE_SOCKADDR_SA_LEN -DHAVE_GETHOSTBYNAME2 -DHAVE_UNION_SEMUN \
+		-DHAVE_SCHED_YIELD -DHAVE_MSGHDR_MSG_CONTROL \
+		-DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM \
+		-DHAVE_NETINET_IN_SYSTM
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
+		found_lock_method=yes
+
+	endif
+
+	LIBS= -lpthread
+
+	# check for ver >= 4.1
+	ifeq ($(shell [ $(OSREL_N) -gt 4001 ] && echo has_kqueue), has_kqueue)
+		ifeq ($(NO_KQUEUE),)
+			DEFS+=-DHAVE_KQUEUE
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+	DEFAULT_YACC=yacc
+endif
+
+ifeq ($(OS), openbsd)
+	DEFS+=-DHAVE_SOCKADDR_SA_LEN  -DHAVE_GETHOSTBYNAME2 \
+		-DHAVE_UNION_SEMUN -DHAVE_MSGHDR_MSG_CONTROL \
+		-DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
+		found_lock_method=yes
+	endif
+	LIBS= -lpthread  
+	# check for ver >=2 9
+	ifeq ($(shell [ $(OSREL_N) -ge 2009 ] && echo has_kqueue), has_kqueue)
+		ifeq ($(NO_KQUEUE),)
+			DEFS+=-DHAVE_KQUEUE
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+	# (symbols on openbsd are prefixed by "_")
+	DEFAULT_YACC=yacc
+	# no sched_yield on openbsd unless linking with c_r (not recommended)
+	LIBS= 
+	OPENBSD_IS_AOUT= $(shell echo "$(OSREL)" | \
+				sed -e 's/^3\.[0-3][^0-9]*$$/yes/' |sed -e 's/^[0-2]\..*/yes/')
+# exception: on sparc openbsd 3.2 is elf and not aout
+ifeq ($(OSREL), 3.2)
+ifeq	($(ARCH), sparc)
+		OPENBSD_IS_AOUT:=no
+endif
+ifeq	($(ARCH), sparc64)
+		OPENBSD_IS_AOUT:=no
+endif
+endif
+
+ifeq ($(OPENBSD_IS_AOUT), yes)
+		DEFS+=-DDLSYM_PREFIX='"_"'
+		LDFLAGS=        # openbsd ld doesn't like -O2 or -E
+endif
+endif   # if openbsd
+
+ifeq ($(OS), netbsd)
+	DEFS+=-DHAVE_SOCKADDR_SA_LEN -DHAVE_GETHOSTBYNAME2 \
+		-DHAVE_MSGHDR_MSG_CONTROL -DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_SYSV_SEM  # try pthread sems
+		found_lock_method=yes
+	endif
+	# check for ver >= 2.0.0
+	ifeq ($(shell [ $(OSREL_N) -ge 2000000 ] && echo has_kqueue), has_kqueue)
+		ifeq ($(NO_KQUEUE),)
+			DEFS+=-DHAVE_KQUEUE
+			# netbsd + kqueue and -malign-double don't work
+			CFLAGS:=$(filter-out -malign-double, $(CFLAGS))
+		endif
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+	DEFAULT_YACC=yacc
+	LIBS= 
+endif
+
+# OS X support, same as freebsd
+ifeq ($(OS), darwin)
+	DEFS+=-DHAVE_SOCKADDR_SA_LEN -DHAVE_GETHOSTBYNAME2 -DHAVE_UNION_SEMUN \
+		-DHAVE_SCHED_YIELD -DHAVE_MSGHDR_MSG_CONTROL \
+		-DUSE_ANON_MMAP \
+		-DNDEBUG -DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM
+	# -DNDEBUG used to turn off assert (assert wants to call
+	# eprintf which doesn't seem to be defined in any shared lib
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
+		found_lock_method=yes
+		LIBS= -pthread -lresolv  #dlopen is in libc
+	else
+		LIBS= -lresolv  #dlopen is in libc
+	endif
+	ifeq ($(NO_KQUEUE),)
+		DEFS+=-DHAVE_KQUEUE
+	endif
+	ifeq ($(NO_SELECT),)
+		DEFS+=-DHAVE_SELECT
+	endif
+	LDFLAGS=        # darwin doesn't like -O2 or -E
+	LIB_LDFLAGS= -bundle -bundle_loader ../../$(MAIN_NAME)
+	DEFAULT_YACC=yacc
+endif
+
+ifeq ($(LEX),)
+	LEX=flex
+endif
+ifeq ($(YACC),)
+	YACC=$(DEFAULT_YACC)
+endif
+YACC_FLAGS=-d -b config
+
+LDFLAGS+= $(LD_EXTRA_OPTS)
+
+ifneq (,$(findstring CYGWIN, $(OS)))
+	#cygwin is the same as common
+	ifneq ($(found_lock_method), yes)
+		DEFS+= -DUSE_SYSV_SEM  # try sys v sems
+		found_lock_method=yes
+	endif
+endif
+
+#add libssl if needed
+ifneq ($(TLS),)
+DEFS+= -I$(LOCALBASE)/ssl/include -I$(LOCALBASE)/include -I$(SYSBASE)/include/openssl
+LIBS+= -L$(LOCALBASE)/lib -L$(LOCALBASE)/ssl/lib -lssl  -lcrypto
+endif
+
+#add libsctp if needed
+ifneq ($(SCTP),)
+LIBS+= -lsctp
+endif
+
+ifneq ($(found_lock_method), yes)
+$(warning	No locking method found so far, trying SYS V sems)
+		DEFS+= -DUSE_SYSV_SEM  # try sys v sems
+		found_lock_method=yes
+endif
+
+
+endif  # ifeq ($(makefile_defs, 1)

@@ -1,0 +1,89 @@
+#
+# common Makefile rules, included by main Makefile & the  modules
+#
+
+#
+# Uses: NAME, ALLDEP, CC, CFLAGS, DEFS, LIBS, MKDEP
+# (all this must  be defined previously!,  see Makefile.defs & Makefile)
+#
+#  History:
+#  --------
+#  2010-01-08  imported (bogdan)
+
+sources= $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+objs= $(sources:.c=.o)
+depends= $(sources:.c=.d)
+
+#implicit rules
+%.o: %.c $(ALLDEP)
+	@echo "Compiling $<"
+	$(Q)$(CC) $(CFLAGS) $(DEFS) -c $< -o $@
+
+%.d: %.c $(ALLDEP)
+	@set -e; $(MKDEP) $(DEFS) $< \
+	|  sed 's#\(\($*D)\)\?$(*F)\)\.o[ :]*#$*.o $@ : #g' > $@; \
+	[ -s $@ ] || rm -f $@
+
+
+# normal rules
+$(NAME): $(objs) $(ALLDEP)
+	@echo "Linking $(NAME)"
+	$(Q)$(LD) $(LDFLAGS) $(objs) $(extra_objs) $(LIBS) -o $(NAME) 
+
+
+.PHONY: all
+all: $(NAME)
+
+
+.PHONY: dep
+dep: $(depends)
+
+
+.PHONY: clean
+clean:
+	-@rm -f $(objs) $(NAME) $(objs:.o=.il) 2>/dev/null
+	-@if [ "$(MAKELEVEL)"=="0" ]; then \
+		for lib in $(protos) "" ; do \
+			if [ -d "$$lib" -a -f "$$lib/Makefile" ]; then \
+				$(MAKE) -C $$lib clean ; \
+			fi ; \
+		done; \
+		for lib in $(modules) "" ; do \
+			if [ -d "$$lib" -a -f "$$lib/Makefile" ]; then \
+				$(MAKE) -C $$lib clean ; \
+			fi ; \
+		done; \
+	fi;
+
+
+.PHONY: proper
+.PHONY: distclean
+.PHONY: realclean
+proper realclean distclean: clean 
+	-@rm -f $(depends) 2>/dev/null
+	-@rm -f TAGS tags *.dbg .*.swp
+	-@if [ "$(MAKELEVEL)"=="0" ]; then \
+		for lib in $(protos) "" ; do \
+			if [ -d "$$lib" -a -f "$$lib/Makefile" ]; then \
+				$(MAKE) -C $$lib proper ; \
+			fi ; \
+		done; \
+		for lib in $(modules) "" ; do \
+			if [ -d "$$lib" -a -f "$$lib/Makefile" ]; then \
+				$(MAKE) -C $$lib proper ; \
+			fi ; \
+		done; \
+	fi;
+
+
+.PHONY: TAGS
+TAGS:
+	$(MKTAGS) 
+
+ifeq (,$(MAKECMDGOALS))
+-include $(depends)
+endif
+ifneq (,$(filter-out clean proper distclean realclean mantainer-clean TAGS \
+		tar , $(MAKECMDGOALS)))
+-include $(depends)
+endif

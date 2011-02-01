@@ -1,0 +1,389 @@
+/*
+ * Copyright (C) 2007-2008 1&1 Internet AG
+ *
+ * This file is part of opensips, a free SIP server.
+ *
+ * opensips is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version
+ *
+ * opensips is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License 
+ * along with this program; if not, write to the Free Software 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
+ */
+
+/**
+ * \file db/db_query.c
+ * \brief Query helper for database drivers
+ *
+ * This helper methods for database queries are used from the database
+ * SQL driver to do the actual work. Each function uses some functions from
+ * the actual driver with function pointers to the concrete, specific
+ * implementation.
+*/
+
+#include <stdio.h>
+#include "../log.h"
+#include "db_ut.h"
+#include "db_query.h"
+
+
+
+int db_do_query( db_con_t* _h,  db_key_t* _k,  db_op_t* _op,
+	 db_val_t* _v,  db_key_t* _c,  int _n,  int _nc,
+	 db_key_t _o, db_res_t** _r, int (*val2str) ( db_con_t*,
+	 db_val_t*, char*, int* _len), int (*submit_query)( db_con_t*,
+	 str*), int (*store_result)( db_con_t* _h, db_res_t** _r),str *query_holder)
+{
+
+	int off, ret;
+	str  sql_str;
+	char sql_buf[SQL_BUF_LEN];
+
+	if (!_h || !val2str || (!submit_query && !query_holder) || (_r && !store_result)) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	if (!_c) {
+		ret = snprintf(sql_buf, SQL_BUF_LEN, "select * from %.*s ", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+		if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+		off = ret;
+	} else {
+		ret = snprintf(sql_buf, SQL_BUF_LEN, "select ");
+		if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+		off = ret;
+
+		ret = db_print_columns(sql_buf + off, SQL_BUF_LEN - off, _c, _nc);
+		if (ret < 0) return -1;
+		off += ret;
+
+		ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, "from %.*s ", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+		if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+		off += ret;
+	}
+	if (_n) {
+		ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, "where ");
+		if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+		off += ret;
+
+		ret = db_print_where(_h, sql_buf + off,
+				SQL_BUF_LEN - off, _k, _op, _v, _n, val2str);
+		if (ret < 0) return -1;;
+		off += ret;
+	}
+	if (_o) {
+		ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, " order by %.*s", _o->len, _o->s);
+		if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+		off += ret;
+	}
+	/*
+	 * Null-terminate the string for the postgres driver. Its query function
+	 * don't support a length parameter, so they need this for the correct
+	 * function of strlen. This zero is not included in the 'str' length.
+	 * We need to check the length here, otherwise we could overwrite the buffer
+	 * boundaries if off is equal to SQL_BUF_LEN.
+	 */
+	if (off + 1 >= SQL_BUF_LEN) goto error;
+	sql_buf[off + 1] = '\0';
+	sql_str.s = sql_buf;
+	sql_str.len = off;
+
+	if (submit_query)
+	{
+		if (submit_query(_h, &sql_str) < 0) 
+		{
+			LM_ERR("error while submitting query\n");
+			return -2;
+		}
+	}
+	else
+	{
+		query_holder->s = pkg_malloc(off);
+		if (!query_holder->s)
+		{
+			LM_ERR("no more pkg mem\n");
+			return -2;
+		}
+		memcpy(query_holder->s,sql_buf,off);
+		query_holder->len = off;
+	}
+
+	if(_r) {
+		int tmp = store_result(_h, _r);
+		if (tmp < 0) {
+			LM_ERR("error while storing result\n");
+			return tmp;
+		}
+	}
+	return 0;
+
+error:
+	LM_ERR("error while preparing query\n");
+	return -1;
+}
+
+
+int db_do_raw_query( db_con_t* _h,  str* _s, db_res_t** _r,
+	int (*submit_query)( db_con_t* _h,  str* _c),
+	int (*store_result)( db_con_t* _h, db_res_t** _r))
+{
+	if (!_h || !_s || !submit_query || !store_result) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	if (submit_query(_h, _s) < 0) {
+		LM_ERR("error while submitting query\n");
+		return -2;
+	}
+
+	if(_r) {
+		int tmp = store_result(_h, _r);
+		if (tmp < 0) {
+			LM_ERR("error while storing result");
+			return tmp;
+		}
+	}
+	return 0;
+}
+
+
+int db_do_insert( db_con_t* _h,  db_key_t* _k,  db_val_t* _v,
+	 int _n, int (*val2str) ( db_con_t*,  db_val_t*, char*, int*),
+	int (*submit_query)( db_con_t* _h,  str* _c),str *query_holder)
+{
+	int off, ret;
+	str  sql_str;
+	char sql_buf[SQL_BUF_LEN];
+
+	if (!_h || !_k || !_v || !_n || !val2str || (!submit_query && !query_holder)) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	ret = snprintf(sql_buf, SQL_BUF_LEN, "insert into %.*s (", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+	if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+	off = ret;
+
+	ret = db_print_columns(sql_buf + off, SQL_BUF_LEN - off, _k, _n);
+	if (ret < 0) return -1;
+	off += ret;
+
+	ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, ") values (");
+	if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+	off += ret;
+
+	ret = db_print_values(_h, sql_buf + off, SQL_BUF_LEN - off, _v, _n, val2str);
+	if (ret < 0) return -1;
+	off += ret;
+
+	if (off + 2 > SQL_BUF_LEN) goto error;
+	sql_buf[off++] = ')';
+	sql_buf[off] = '\0';
+	sql_str.s = sql_buf;
+	sql_str.len = off;
+
+	if (submit_query)
+	{
+		if (submit_query(_h, &sql_str) < 0) 
+		{
+		     LM_ERR("error while submitting query\n");
+			return -2;
+		}
+	}
+	else
+	{
+		query_holder->s = pkg_malloc(off);
+		if (!query_holder->s)
+		{
+			LM_ERR("no more pkg mem\n");
+			return -2;
+		}
+		memcpy(query_holder->s,sql_buf,off);
+		query_holder->len = off;
+
+	}
+	return 0;
+
+error:
+	LM_ERR("error while preparing insert operation\n");
+	return -1;
+}
+
+
+int db_do_delete( db_con_t* _h,  db_key_t* _k,  db_op_t* _o,
+	 db_val_t* _v,  int _n, int (*val2str) ( db_con_t*,
+	 db_val_t*, char*, int*), int (*submit_query)( db_con_t* _h,
+	 str* _c),str *query_holder)
+{
+	int off, ret;
+	str  sql_str;
+	char sql_buf[SQL_BUF_LEN];
+
+	if (!_h || !val2str || (!submit_query && !query_holder)) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	ret = snprintf(sql_buf, SQL_BUF_LEN, "delete from %.*s", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+	if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+	off = ret;
+
+	if (_n) {
+		ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, " where ");
+		if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+		off += ret;
+
+		ret = db_print_where(_h, sql_buf + off,
+				SQL_BUF_LEN - off, _k, _o, _v, _n, val2str);
+		if (ret < 0) return -1;
+		off += ret;
+	}
+	if (off + 1 > SQL_BUF_LEN) goto error;
+	sql_buf[off] = '\0';
+	sql_str.s = sql_buf;
+	sql_str.len = off;
+
+	if (submit_query)
+	{
+		if (submit_query(_h, &sql_str) < 0) {
+			LM_ERR("error while submitting query\n");
+			return -2;
+		}
+	}
+	else
+	{
+		query_holder->s = pkg_malloc(off);
+		if (!query_holder->s)
+		{
+			LM_ERR("no more pkg mem\n");
+			return -2;
+		}
+		memcpy(query_holder->s,sql_buf,off);
+		query_holder->len = off;
+	}
+	return 0;
+
+error:
+	LM_ERR("error while preparing delete operation\n");
+	return -1;
+}
+
+
+int db_do_update( db_con_t* _h,  db_key_t* _k,  db_op_t* _o,
+	 db_val_t* _v,  db_key_t* _uk,  db_val_t* _uv,  int _n,
+	 int _un, int (*val2str) ( db_con_t*,  db_val_t*, char*, int*),
+	int (*submit_query)( db_con_t* _h,  str* _c),str *query_holder)
+{
+	int off, ret;
+	str  sql_str;
+	char sql_buf[SQL_BUF_LEN];
+
+	if (!_h || !_uk || !_uv || !_un || !val2str || (!submit_query && !query_holder)) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	ret = snprintf(sql_buf, SQL_BUF_LEN, "update %.*s set ", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+	if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+	off = ret;
+
+	ret = db_print_set(_h, sql_buf + off, SQL_BUF_LEN - off, _uk, _uv, _un, val2str);
+	if (ret < 0) return -1;
+	off += ret;
+
+	if (_n) {
+		ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, " where ");
+		if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+		off += ret;
+
+		ret = db_print_where(_h, sql_buf + off, SQL_BUF_LEN - off, _k, _o, _v, _n, val2str);
+		if (ret < 0) return -1;
+		off += ret;
+	}
+	if (off + 1 > SQL_BUF_LEN) goto error;
+	sql_buf[off] = '\0';
+	sql_str.s = sql_buf;
+	sql_str.len = off;
+
+	if (submit_query)
+	{
+		if (submit_query(_h, &sql_str) < 0) {
+			LM_ERR("error while submitting query\n");
+			return -2;
+		}
+	}
+	else
+	{
+		query_holder->s = pkg_malloc(off);
+		if (!query_holder->s)
+		{
+			LM_ERR("no more pkg mem\n");
+			return -2;
+		}
+		memcpy(query_holder->s,sql_buf,off);
+		query_holder->len = off;
+	}
+
+	return 0;
+
+error:
+	LM_ERR("error while preparing update operation\n");
+	return -1;
+}
+
+
+int db_do_replace( db_con_t* _h,  db_key_t* _k,  db_val_t* _v,
+	 int _n, int (*val2str) ( db_con_t*,  db_val_t*, char*,
+	int*), int (*submit_query)( db_con_t* _h,  str* _c))
+{
+	int off, ret;
+	str  sql_str;
+	char sql_buf[SQL_BUF_LEN];
+
+	if (!_h || !_k || !_v || !val2str|| !submit_query) {
+		LM_ERR("invalid parameter value\n");
+		return -1;
+	}
+
+	ret = snprintf(sql_buf, SQL_BUF_LEN, "replace %.*s (", CON_TABLE(_h)->len, CON_TABLE(_h)->s);
+	if (ret < 0 || ret >= SQL_BUF_LEN) goto error;
+	off = ret;
+
+	ret = db_print_columns(sql_buf + off, SQL_BUF_LEN - off, _k, _n);
+	if (ret < 0) return -1;
+	off += ret;
+
+	ret = snprintf(sql_buf + off, SQL_BUF_LEN - off, ") values (");
+	if (ret < 0 || ret >= (SQL_BUF_LEN - off)) goto error;
+	off += ret;
+
+	ret = db_print_values(_h, sql_buf + off, SQL_BUF_LEN - off, _v, _n,
+	val2str);
+	if (ret < 0) return -1;
+	off += ret;
+
+	if (off + 2 > SQL_BUF_LEN) goto error;
+	sql_buf[off++] = ')';
+	sql_buf[off] = '\0';
+	sql_str.s = sql_buf;
+	sql_str.len = off;
+
+	if (submit_query(_h, &sql_str) < 0) {
+	        LM_ERR("error while submitting query\n");
+		return -2;
+	}
+	return 0;
+
+ error:
+	LM_ERR("error while preparing replace operation\n");
+	return -1;
+}
