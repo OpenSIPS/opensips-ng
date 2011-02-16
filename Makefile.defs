@@ -1111,7 +1111,7 @@ endif
 DEFAULT_YACC=bison
 
 # on solaris add -lxnet (e.g. LIBS= -lxnet)
-LIBS= -ldl -lresolv -lrt -lpthread -lcares 
+LIBS= -ldl -lresolv -lrt -lpthread
 
 #os specific stuff
 ifeq ($(OS), linux)
@@ -1205,7 +1205,7 @@ ifeq ($(OS), freebsd)
 	DEFS+=-DHAVE_SOCKADDR_SA_LEN -DHAVE_GETHOSTBYNAME2 -DHAVE_UNION_SEMUN \
 		-DHAVE_SCHED_YIELD -DHAVE_MSGHDR_MSG_CONTROL \
 		-DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM \
-		-DHAVE_NETINET_IN_SYSTM
+		-DHAVE_NETINET_IN_SYSTM -I$(LOCALBASE)/include
 	ifneq ($(found_lock_method), yes)
 		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
 		found_lock_method=yes
@@ -1229,7 +1229,7 @@ endif
 ifeq ($(OS), openbsd)
 	DEFS+=-DHAVE_SOCKADDR_SA_LEN  -DHAVE_GETHOSTBYNAME2 \
 		-DHAVE_UNION_SEMUN -DHAVE_MSGHDR_MSG_CONTROL \
-		-DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM
+		-DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM -I$(LOCALBASE)/include
 	ifneq ($(found_lock_method), yes)
 		DEFS+= -DUSE_PTHREAD_MUTEX  # try pthread sems
 		found_lock_method=yes
@@ -1268,7 +1268,8 @@ endif   # if openbsd
 
 ifeq ($(OS), netbsd)
 	DEFS+=-DHAVE_SOCKADDR_SA_LEN -DHAVE_GETHOSTBYNAME2 \
-		-DHAVE_MSGHDR_MSG_CONTROL -DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM
+		-DHAVE_MSGHDR_MSG_CONTROL -DHAVE_CONNECT_ECONNRESET_BUG -DHAVE_TIMEGM \
+		-I$(LOCALBASE)/include
 	ifneq ($(found_lock_method), yes)
 		DEFS+= -DUSE_SYSV_SEM  # try pthread sems
 		found_lock_method=yes
@@ -1331,6 +1332,8 @@ ifneq (,$(findstring CYGWIN, $(OS)))
 		found_lock_method=yes
 	endif
 endif
+
+LIBS+= -L$(LOCALBASE)/lib -lcares
 
 #add libssl if needed
 ifneq ($(TLS),)

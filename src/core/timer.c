@@ -201,7 +201,7 @@ static void* timer_thread(void *param)
 	}
 
 	LM_DBG("tv = %ld, %ld , m=%d\n",
-		o_tv.tv_sec,o_tv.tv_usec,multiple);
+		(long int)o_tv.tv_sec, (long int)o_tv.tv_usec,multiple);
 
 	if (uttasks==NULL) {
 		for( ; ; ) {
