@@ -1,0 +1,113 @@
+/* 
+ * $Id: my_con.h 6531 2010-01-25 16:05:26Z bogdan_iancu $
+ *
+ * Copyright (C) 2001-2003 FhG Fokus
+ * Copyright (C) 2008 1&1 Internet AG
+ *
+ * This file is part of opensips, a free SIP server.
+ *
+ * opensips is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version
+ *
+ * opensips is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License 
+ * along with this program; if not, write to the Free Software 
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+#ifndef MY_CON_H
+#define MY_CON_H
+
+#include "../../db/db_id.h"
+
+#include <time.h>
+#include <mysql/mysql.h>
+
+
+#define PREP_STMT_VAL_LEN	1024
+
+struct bind_icontent {
+	unsigned long len;
+	my_bool null;
+};
+
+struct bind_ocontent {
+	char buf[PREP_STMT_VAL_LEN];
+	unsigned long len;
+	my_bool null;
+	my_bool error;
+};
+
+
+struct my_stmt_ctx {
+	MYSQL_STMT *stmt;
+	str table;
+	str query;
+	int has_out;
+	struct my_stmt_ctx *next;
+};
+
+struct prep_stmt {
+	struct my_stmt_ctx *stmts;
+	struct my_stmt_ctx *ctx;
+	/*in*/
+	MYSQL_BIND *bind_in;
+	struct bind_icontent *in_bufs;
+	/*out*/
+	int cols_out;
+	MYSQL_BIND *bind_out;
+	struct bind_ocontent *out_bufs;
+	/*linking*/
+	struct prep_stmt *next;
+};
+
+
+struct my_con {
+	struct db_id* id;        /* Connection identifier */
+	unsigned int ref;        /* Reference count */
+
+	MYSQL* con;              /* Connection representation */
+	MYSQL_RES *res;
+	MYSQL_ROW row;
+	unsigned int init;       /* If the mysql conn was initialized */
+
+	struct prep_stmt *ps_list; /* list of prepared statements */
+	unsigned int disconnected; /* (CR_CONNECTION_ERROR) was detected */
+};
+
+
+
+/*
+ * Some convenience wrappers
+ */
+#define CON_RESULT(db_con)     (((struct my_con*)((db_con)->tail))->res)
+#define CON_CONNECTION(db_con) (((struct my_con*)((db_con)->tail))->con)
+#define CON_ROW(db_con)		   (((struct my_con*)((db_con)->tail))->row)
+#define CON_PS_LIST(db_con)    (((struct my_con*)((db_con)->tail))->ps_list)
+#define CON_DISCON(db_con)     (((struct my_con*)((db_con)->tail))->disconnected)
+
+#define CON_FIRST_PS_OUTCOL(db_con, i)       (((((struct my_con*)((db_con)->tail))->ps_list)->out_bufs)[i])
+
+
+#define CON_MYSQL_PS(db_con) \
+	((struct prep_stmt*)(CON_CURR_PS(db_con)))
+#define CON_PS_STMT(db_con) \
+	(CON_MYSQL_PS(db_con)->ctx->stmt)
+#define CON_PS_STMTS(db_con) \
+	(CON_MYSQL_PS(db_con)->stmts)
+#define CON_PS_OUTCOL(_db_con, _i) \
+	((CON_MYSQL_PS(_db_con)->out_bufs)[_i])
+
+
+int db_mysql_connect(struct my_con* ptr);
+
+
+
+
+#endif /* MY_CON_H */
