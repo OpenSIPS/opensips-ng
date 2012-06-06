@@ -29,7 +29,7 @@
 #include <ctype.h>
 
 #include "fifo_fnc.h"
-#include "mi_fifo.h"
+#include "mi_stream.h"
 #include "../../log.h"
 #include "../../globals.h"
 #include "../../str.h"

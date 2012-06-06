@@ -31,7 +31,7 @@
 #include "../../globals.h"
 #include "../../log.h"
 #include "../../utils.h"
-#include "mi_fifo.h"
+#include "mi_stream.h"
 #include "fifo_fnc.h"
 #include "mi_parser.h"
 

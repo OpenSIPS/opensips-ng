@@ -17,6 +17,11 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  *
+ *
+ * History:
+ * --------
+ *  2012-06-06 : Ported to 2.0 and added TCP support ( vlad-paiu )
+ *
  */
 
 #include <stdlib.h>
@@ -35,8 +40,9 @@
 #include "../../log.h"
 #include "../../daemonize.h"
 #include "../../globals.h"
-#include "mi_fifo.h"
+#include "mi_stream.h"
 #include "fifo_fnc.h"
+#include "tcp_fnc.h"
 #include "mi_parser.h"
 #include "mi_writer.h"
 
@@ -74,7 +80,7 @@ static config_param_t module_params[] = {
 
 
 struct core_module_interface interface = {
-	"mi_fifo",
+	"mi_stream",
 	OPENSIPS_FULL_VERSION,       /* compile version */
 	OPENSIPS_COMPILE_FLAGS,      /* compile flags */
 	CORE_MODULE_UTILS,
@@ -89,7 +95,7 @@ struct core_module_interface interface = {
 	NULL
 };
 
-int  mod_init(void)
+int mod_init(void)
 {
 	static fd_wrapper fifo, sock;
 	int n;
@@ -165,7 +171,7 @@ int  mod_init(void)
 	fifo.current_comm_len = 0;
 	fifo.mi_buf_pos = 0;
 
-	socket_fd = mi_init_sock_server(11111);
+	socket_fd = mi_init_sock_server(mi_listen_port);
 	if (socket_fd < 0)
 	{
 		LM_ERR("Error initializing the socket server\n");

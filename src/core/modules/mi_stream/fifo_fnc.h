@@ -42,7 +42,6 @@
 
 int mi_init_fifo_server(char *fifo_name, int mode, int uid, int gid,
 		char* fifo_reply_dir);
-int mi_init_sock_server(int port);
 int mi_get_next_line(char **dest, int max, char *source,int *read);
 int read_and_append( char *b, int fd,int *current_command_len);
 int is_valid(char *b,int len);

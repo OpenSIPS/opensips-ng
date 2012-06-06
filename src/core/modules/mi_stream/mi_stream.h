@@ -50,10 +50,6 @@
 /* size of buffer used by parser to read and build the MI tree */
 #define MAX_MI_FIFO_READ 8192
 
-#define MAX_TCP_QUEUE 50
-
-#define DEFAULT_MI_PORT 55555
-
 enum fd_type {TYPE_NONE=0,TYPE_FIFO,TYPE_SOCKET_SERVER,TYPE_SOCKET_CLIENT};
 
 struct wrap_fd {

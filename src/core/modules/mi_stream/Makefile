@@ -7,7 +7,7 @@
 ROOT_PATH=../../../..
 
 include $(ROOT_PATH)/Makefile.defs
-NAME=mi_fifo.so
+NAME=mi_stream.so
 LIBS=
 
 include $(ROOT_PATH)/Makefile.libs
