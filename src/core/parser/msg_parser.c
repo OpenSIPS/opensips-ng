@@ -322,7 +322,7 @@ int parse_headers(struct sip_msg* msg, hdr_flags_t flags, int next)
 	end = msg->buf + msg->len;
 	tmp = msg->unparsed;
 
-	LM_DBG("header start = %d\n",tmp - msg->buf);
+	LM_DBG("header start = %ld\n",tmp - msg->buf);
 
 	if (next)
 	{

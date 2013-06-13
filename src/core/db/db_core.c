@@ -265,7 +265,6 @@ void * work(void * arg)
 {
 	db_query_t * q;
 	db_item_t * item;
-	int ret;
 
 	while (1)
 	{
@@ -281,7 +280,7 @@ void * work(void * arg)
 		lock_release(w_lock);
 
 		/* send the query */
-		ret = send_query(q);
+		send_query(q);
 
 		/* put the result through the dispatcher */
 		put_task_simple(reactor_in->disp, TASK_PRIO_RESUME_EXEC, unpack_result, q);

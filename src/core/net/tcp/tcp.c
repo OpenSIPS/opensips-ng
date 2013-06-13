@@ -317,7 +317,7 @@ again_message:
 				/* all headers found -> check the Content-Len*/
 				if (conn->read.msg->content_length==NULL)
 				{
-					LM_DBG("header len = %d content_length = %p\n",
+					LM_DBG("header len = %ld content_length = %p\n",
 						 conn->read.msg->eoh - conn->read.msg->buf,
 						 conn->read.msg->content_length );
 					goto terminate_conn;

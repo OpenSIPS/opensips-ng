@@ -389,7 +389,6 @@ struct rdata* parse_record(unsigned char* reply, int size)
 {
 	int qno, answers_no;
 	int r;
-	int ans_len;
 	HEADER  hdr ;
 	unsigned char* p;
 
@@ -433,7 +432,6 @@ struct rdata* parse_record(unsigned char* reply, int size)
 		}
 	};
 	answers_no = ntohs((unsigned short) hdr.ancount);
-	ans_len = ANS_SIZE;
 
 	for (r = 0; (r < answers_no) && (p < end); r++)
 	{

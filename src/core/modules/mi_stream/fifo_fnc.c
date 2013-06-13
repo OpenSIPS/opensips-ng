@@ -247,7 +247,7 @@ int mi_writer(reactor_t *rec,int fd,void *param)
 int mi_listener(void *param)
 {
 	int reply_fd = -1,fd,connect_fd,flags;
-	int line_len,bytes_recv,old_len,*current_comm_len;
+	int line_len,bytes_recv,*current_comm_len;
 	char *command,*file_sep,*file=NULL,*first_line,*mi_buf;
 	struct mi_cmd *f;
 	struct mi_root *mi_cmd, *mi_rpl;
@@ -303,7 +303,6 @@ reaccept:
 	 * either on fifo or TCP
 	 */
 	current_comm_len = &(wrap->current_comm_len);
-	old_len = *current_comm_len;
 	mi_buf = wrap->buffer;
 	fd = wrap->fd;
 

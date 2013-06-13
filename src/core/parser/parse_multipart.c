@@ -191,7 +191,7 @@ inline struct multi_body * get_all_bodies(struct sip_msg * msg)
 	if (msg->buf + msg->len - start < get_content_length(msg))
 	{
 		LM_ERR("Message is shorter than indicated by content length:"
-			" got %d expected %ld\n", msg->buf + msg->len - start,
+			" got %ld expected %ld\n", msg->buf + msg->len - start,
 			get_content_length(msg));
 		return NULL;
 	}
