@@ -55,6 +55,7 @@ int parse_listener(char* s, int slen, char** host, int* hlen,
 	int   bracket;
 	str   tmp;
 	char* end;
+	unsigned int tmp_port;
 
 	first=second=0;
 	bracket=0;
@@ -97,7 +98,8 @@ int parse_listener(char* s, int slen, char** host, int* hlen,
 			goto error_proto;
 		tmp.s = second+1;
 		tmp.len = end - tmp.s;
-		if (str2int( &tmp, (unsigned int*)port )==-1) goto error_port;
+		if (str2int( &tmp, &tmp_port )==-1) goto error_port;
+		*port = tmp_port;
 		*host=first+1;
 		*hlen=(int)(second-*host);
 		return 0;
@@ -200,6 +202,7 @@ int fix_all_listeners(void)
 
 	/* init all registered listeners */
 	for( si=registered_listeners ; si ; si=si->next ) {
+		LM_DBG("Passing through %p to %p\n", si, registered_listeners);
 
 		/* IP address */
 		bk = si->host.s[si->host.len];
@@ -256,7 +259,7 @@ int fix_all_listeners(void)
 		/* build and set string encoding for the real socket info */
 		tmp = socket2str( si, 0, &si->sock_str.len, 0);
 		if (tmp==0) {
-			LM_ERR("failed to convert socket to string");
+			LM_ERR("failed to convert socket to string\n");
 			goto error;
 		}
 		si->sock_str.s=(char*)shm_malloc(si->sock_str.len);
