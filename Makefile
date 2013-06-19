@@ -27,13 +27,15 @@ MODULE_DIR=src/core/modules/
 SRC_DIRS=src/core src/core/mem/ src/core/locking src/core/config \
 		 src/core/net src/core/dispatcher src/core/reactor src/core/builder \
 		 src/core/parser src/core/parser/digest src/core/parser/contact \
-		 src/core/parser/sdp src/core/mi src/core/resolve src/core/db 
+		 src/core/parser/sdp src/core/mi src/core/resolve src/core/db
+CFG_DIR=src/core/config/
+CFG_GEN_FILES=config.tab.c config.tab.h lex.yy.c
 
-# skip the SVN dir from protos list
-override exclude_protos+= .svn 
+# skip extra dirs from protos list
+override exclude_protos+=
 
 # get names of available protos
-protos=$(shell cd $(PROTO_DIR) ; list=`ls -1 `; for i in $$list; do if test -d $$i; then echo $$i; fi; done)
+protos=$(shell cd $(PROTO_DIR) > /dev/null ; list=`ls -1 `; for i in $$list; do if test -d $$i; then echo $$i; fi; done)
 
 # skip the excluded protos
 protos:=$(filter-out $(exclude_protos), $(protos) )
@@ -42,11 +44,11 @@ protos:=$(filter-out $(exclude_protos), $(protos) )
 protos:=$(addprefix $(PROTO_DIR),$(protos))
 
 
-# skip the SVN dir from modules list
-override exclude_moduless+= .svn 
+# skip extra dirs from modules list
+override exclude_modules+=
 
 # get names of available modules
-modules=$(shell cd $(MODULE_DIR) ; list=`ls -1 `; for i in $$list; do if test -d $$i; then echo $$i; fi; done)
+modules=$(shell cd $(MODULE_DIR) > /dev/null ; list=`ls -1 `; for i in $$list; do if test -d $$i; then echo $$i; fi; done)
 
 # skip the excluded moduless
 modules:=$(filter-out $(exclude_modules), $(modules) )
@@ -55,13 +57,16 @@ modules:=$(filter-out $(exclude_modules), $(modules) )
 modules:=$(addprefix $(MODULE_DIR),$(modules))
 
 
+# build list of files used by the config file
+cfg_gen_files:=$(addprefix $(CFG_DIR),$(CFG_GEN_FILES))
+
 #export relevant variables to the sub-makes
-export DEFS PROFILE CC LD MKDEP MKTAGS CFLAGS LDFLAGS LIB_CFLAGS LIB_LDFLAGS 
-export LIBS LEX YACC YACC_FLAGS
+export DEFS PROFILE CC LD MKDEP MKTAGS CFLAGS LDFLAGS LIB_CFLAGS LIB_LDFLAGS
+export LIBS LEX YACC YACC_FLAGS CFG_DIR
 export PREFIX LOCALBASE SYSBASE
-# export relevant variables for recursive calls of this makefile 
+# export relevant variables for recursive calls of this makefile
 # (e.g. make deb)
-export NAME RELEASE OS ARCH 
+export NAME RELEASE OS ARCH
 
 
 
@@ -70,14 +75,11 @@ export NAME RELEASE OS ARCH
 # include the common rules
 include Makefile.rules
 
-#extra targets 
-
 .PHONY: all
 all: $(NAME) protos modules
 
 .PHONY: cfg_parser
-cfg_parser:
-	cd src/core/config; $(MAKE) cfg_parser
+cfg_parser: $(cfg_gen_files)
 
 .PHONY: protos
 protos:
@@ -90,7 +92,7 @@ protos:
 				$(MAKE) -C $$r ; \
 			fi ; \
 		fi ; \
-	done 
+	done
 
 .PHONY: modules
 modules:
@@ -103,14 +105,14 @@ modules:
 				$(MAKE) -C $$r ; \
 			fi ; \
 		fi ; \
-	done 
+	done
 
 
 .PHONY: dist
 dist: tar
 
 .PHONY: tar
-tar: 
+tar:
 	$(TAR) -C .. \
 		--exclude=$(notdir $(CURDIR))/tmp* \
 		--exclude=$(notdir $(CURDIR))/debian* \

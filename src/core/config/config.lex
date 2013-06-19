@@ -28,12 +28,22 @@
 */
 
 %option yylineno
+
+/* hack to suppress the 'unput' not used warning */
+%option nounput
 %{
 
 #include <stdlib.h>
 #include <stdio.h>
 #include "config.tab.h"
 #include "../log.h"
+
+/* hack to supress the unused function 'input' warning */
+#define YY_NO_INPUT
+
+/* hack to solve the duplicate declaration of 'isatty' function */
+#define YY_NO_UNISTD_H
+
 
 void yyerror(char*);
 char * unescape( char * s,char c);

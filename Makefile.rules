@@ -10,7 +10,8 @@
 #  --------
 #  2010-01-08  imported (bogdan)
 
-sources= $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
+sources= $(filter %.c,$(cfg_gen_files)) \
+	$(filter-out $(cfg_gen_files), $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c)))
 objs= $(sources:.c=.o)
 depends= $(sources:.c=.d)
 
@@ -28,7 +29,7 @@ depends= $(sources:.c=.d)
 # normal rules
 $(NAME): $(objs) $(ALLDEP)
 	@echo "Linking $(NAME)"
-	$(Q)$(LD) $(LDFLAGS) $(objs) $(extra_objs) $(LIBS) -o $(NAME) 
+	$(Q)$(LD) $(LDFLAGS) $(objs) $(LIBS) -o $(NAME)
 
 
 .PHONY: all
@@ -37,6 +38,13 @@ all: $(NAME)
 
 .PHONY: dep
 dep: $(depends)
+
+.NOTPARALLEL: $(cfg_gen_files)
+$(cfg_gen_files):
+	-@if [ "$(MAKELEVEL)"=="0" -a -d "$(CFG_DIR)" ]; then \
+		$(MAKE) --no-print-directory -C $(CFG_DIR) ; \
+	fi
+
 
 
 .PHONY: clean
@@ -59,8 +67,8 @@ clean:
 .PHONY: proper
 .PHONY: distclean
 .PHONY: realclean
-proper realclean distclean: clean 
-	-@rm -f $(depends) 2>/dev/null
+proper realclean distclean: clean
+	-@rm -f $(depends) $(cfg_gen_files) 2>/dev/null
 	-@rm -f TAGS tags *.dbg .*.swp
 	-@if [ "$(MAKELEVEL)"=="0" ]; then \
 		for lib in $(protos) "" ; do \
@@ -78,7 +86,7 @@ proper realclean distclean: clean
 
 .PHONY: TAGS
 TAGS:
-	$(MKTAGS) 
+	$(MKTAGS)
 
 ifeq (,$(MAKECMDGOALS))
 -include $(depends)
