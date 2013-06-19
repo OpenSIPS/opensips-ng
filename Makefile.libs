@@ -24,14 +24,14 @@ ALLDEP=Makefile $(ROOT_PATH)/Makefile.rules \
 
 
 ifeq ($(MAKELEVEL), 0)
-	# make called directly in the library directory !
-	$(warning "you should run make from the main opensips directory")
-	ifneq ($(makefile_defs), 1)
-		$(error "the local makefile does not include Makefile.defs!")
-	endif
+ # make called directly in the library directory !
+ $(warning "you should run make from the main opensips directory")
+ ifneq ($(makefile_defs), 1)
+  $(error "the local makefile does not include Makefile.defs!")
+ endif
 else
-	# called by the main Makefile
-	ALLDEP+=$(ROOT_PATH)/Makefile $(ROOT_PATH)/Makefile.defs
+ # called by the main Makefile
+ ALLDEP+=$(ROOT_PATH)/Makefile $(ROOT_PATH)/Makefile.defs
 endif
 
 
