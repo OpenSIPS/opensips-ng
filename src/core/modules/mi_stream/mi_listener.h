@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 OpenSIPS Solutions
+ * Copyright (C) OpenSIPS Solutions
  *
  * This file is part of opensips, a free SIP server.
  *
@@ -18,16 +18,20 @@
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  *
  *
- * history:
+ * History:
  * ---------
- *  2012-06-06 created (vlad-paiu)
+ *  2013-06-28  first version (razvancrainea)
  */
 
-#ifndef _MI_TCP_FNC_H_
-#define _MI_TCP_FNC_H_
 
-#define MAX_TCP_QUEUE 50
+#ifndef _MI_LISTENER_H_
+#define _MI_LISTENER_H_
 
-int mi_init_sock_server(int port);
+int mi_get_next_line(char **dest, int max, char *source,int *read);
+int mi_read_and_append( char *b, int fd,int *current_command_len);
+int mi_is_valid(char *b,int len);
+int mi_listener(void *param);
 
-#endif /* _MI_TCP_FNC_H_ */
+#endif /* _MI_LISTENER_H_ */
+
+

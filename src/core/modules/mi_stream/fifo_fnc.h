@@ -34,18 +34,12 @@
 #include "../../log.h"
 #include "../../globals.h"
 
-/* how patient is opensips with FIFO clients not awaiting a reply? 
-   default = 4 x 80ms = 0.32 sec
-*/
-#define FIFO_REPLY_RETRIES  4
 #define FIFO_REPLY_WAIT     80000
 
 int mi_init_fifo_server(char *fifo_name, int mode, int uid, int gid,
 		char* fifo_reply_dir);
-int mi_get_next_line(char **dest, int max, char *source,int *read);
-int read_and_append( char *b, int fd,int *current_command_len);
-int is_valid(char *b,int len);
-int mi_listener(void *param);
+char *get_reply_filename( char * file, int len );
+int mi_open_reply_pipe( char *pipe_name );
 
 
 /* write len bytes starting from string 
@@ -75,6 +69,5 @@ static inline int mi_fifofd_reply(int fd,char *string,int len)
 
 	return 0;
 }
-
 #endif /* _FIFO_FNC_H */
 

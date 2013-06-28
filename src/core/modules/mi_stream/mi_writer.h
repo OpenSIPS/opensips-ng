@@ -28,6 +28,7 @@
 #define _MI_WRITER_H_
 
 #include <stdio.h>
+#include "mi_stream.h"
 
 int  mi_writer_init(char *ident);
 

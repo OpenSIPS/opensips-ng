@@ -28,6 +28,7 @@
 #define _MI_PARSER_H_
 
 #include <stdio.h>
+#include "mi_stream.h"
 
 struct mi_root *mi_parse_tree(fd_wrapper *wrap);
 

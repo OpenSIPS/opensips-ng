@@ -30,6 +30,7 @@
 
 #include "fifo_fnc.h"
 #include "mi_stream.h"
+#include "mi_listener.h"
 #include "../../log.h"
 #include "../../globals.h"
 #include "../../str.h"

@@ -24,8 +24,8 @@
  */
 
 
-#ifndef _MI_FIFO_H_
-#define _MI_FIFO_H_
+#ifndef _MI_STREAM_H_
+#define _MI_STREAM_H_
 
 #define DEFAULT_MI_REPLY_DIR "/tmp/"
 

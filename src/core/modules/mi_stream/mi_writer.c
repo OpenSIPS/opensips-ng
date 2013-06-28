@@ -27,13 +27,13 @@
 #include <stdio.h>
 #include <string.h>
 #include "../../str.h"
-#include "../../mi/tree.h"
+#include "../../mi/mi.h"
 #include "../../globals.h"
 #include "../../log.h"
 #include "../../utils.h"
-#include "mi_stream.h"
-#include "fifo_fnc.h"
+#include "mi_listener.h"
 #include "mi_parser.h"
+#include "fifo_fnc.h"
 
 static str  mi_fifo_indent;
 
@@ -49,6 +49,8 @@ int mi_writer_init(char *indent)
 
 	return 0;
 }
+
+
 
 static inline int mi_write_node(str *buf, struct mi_node *node, int level)
 {

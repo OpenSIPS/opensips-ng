@@ -45,6 +45,7 @@
 #include "tcp_fnc.h"
 #include "mi_parser.h"
 #include "mi_writer.h"
+#include "mi_listener.h"
 
 /* FIFO server vars */
 /* FIFO name */
@@ -57,10 +58,10 @@ static char *mi_fifo_uid_s = 0;
 static int  mi_fifo_gid = -1;
 static char *mi_fifo_gid_s = 0;
 static int  mi_fifo_mode = S_IRUSR| S_IWUSR| S_IRGRP| S_IWGRP; /* rw-rw---- */
-static int  mi_listen_port = DEFAULT_MI_PORT;
+static int  mi_listen_port = -1;
 
-static int fifo_fd;
-static int socket_fd;
+static int fifo_fd = -1;
+static int socket_fd = -1;
 
 int  mod_init(void);
 void mod_destroy(void);
@@ -103,95 +104,102 @@ int mod_init(void)
 
 	LM_DBG("entering mod_init for mi_fifo\n");
 	/* checking the mi_fifo module param */
-	if (mi_fifo==NULL || *mi_fifo == 0) {
-		LM_ERR("no fifo file configured\n");
-		return -1;
-	}
-
-	LM_DBG("testing fifo existance ...\n");
-	n=stat(mi_fifo, &filestat);
-	if (n==0){
-		/* FIFO exist, delete it (safer) */
-		if (unlink(mi_fifo)<0){
-			LM_ERR("cannot delete old fifo (%s): %s\n",
-				mi_fifo, strerror(errno));
+	if (mi_fifo != NULL && *mi_fifo != 0) {
+		LM_DBG("testing fifo existance ...\n");
+		n=stat(mi_fifo, &filestat);
+		if (n==0){
+			/* FIFO exist, delete it (safer) */
+			if (unlink(mi_fifo)<0){
+				LM_ERR("cannot delete old fifo (%s): %s\n",
+					mi_fifo, strerror(errno));
+				return -1;
+			}
+		}else if (n<0 && errno!=ENOENT){
+			LM_ERR("FIFO stat failed: %s\n", strerror(errno));
 			return -1;
 		}
-	}else if (n<0 && errno!=ENOENT){
-		LM_ERR("FIFO stat failed: %s\n", strerror(errno));
-		return -1;
-	}
 
-	/* checking the mi_fifo_reply_dir param */
-	if(!mi_fifo_reply_dir || *mi_fifo_reply_dir == 0){
-		LM_ERR("mi_fifo_reply_dir parameter is empty\n");
-		return -1;
-	}
-
-	n = stat(mi_fifo_reply_dir, &filestat);
-	if(n < 0){
-		LM_ERR("directory stat failed: %s\n", strerror(errno));
-		return -1;
-	}
-
-	if(S_ISDIR(filestat.st_mode) == 0){
-		LM_ERR("mi_fifo_reply_dir parameter is not a directory\n");
-		return -1;
-	}
-
-	/* check mi_fifo_mode */
-	if(!mi_fifo_mode){
-		LM_WARN("cannot specify mi_fifo_mode = 0, forcing it to rw-------\n");
-		mi_fifo_mode = S_IRUSR| S_IWUSR;
-	}
-
-	if (mi_fifo_uid_s){
-		if (user2uid(&mi_fifo_uid, &mi_fifo_gid, mi_fifo_uid_s)<0){
-			LM_ERR("bad user name %s\n", mi_fifo_uid_s);
+		/* checking the mi_fifo_reply_dir param */
+		if(!mi_fifo_reply_dir || *mi_fifo_reply_dir == 0){
+			LM_ERR("mi_fifo_reply_dir parameter is empty\n");
 			return -1;
 		}
-	}
 
-	if (mi_fifo_gid_s){
-		if (group2gid(&mi_fifo_gid, mi_fifo_gid_s)<0){
-			LM_ERR("bad group name %s\n", mi_fifo_gid_s);
+		n = stat(mi_fifo_reply_dir, &filestat);
+		if(n < 0){
+			LM_ERR("directory stat failed: %s\n", strerror(errno));
 			return -1;
 		}
+
+		if(S_ISDIR(filestat.st_mode) == 0){
+			LM_ERR("mi_fifo_reply_dir parameter is not a directory\n");
+			return -1;
+		}
+
+		/* check mi_fifo_mode */
+		if(!mi_fifo_mode){
+			LM_WARN("cannot specify mi_fifo_mode = 0, forcing it to rw-------\n");
+			mi_fifo_mode = S_IRUSR| S_IWUSR;
+		}
+
+		if (mi_fifo_uid_s){
+			if (user2uid(&mi_fifo_uid, &mi_fifo_gid, mi_fifo_uid_s)<0){
+				LM_ERR("bad user name %s\n", mi_fifo_uid_s);
+				return -1;
+			}
+		}
+
+		if (mi_fifo_gid_s){
+			if (group2gid(&mi_fifo_gid, mi_fifo_gid_s)<0){
+				LM_ERR("bad group name %s\n", mi_fifo_gid_s);
+				return -1;
+			}
+		}
+
+		fifo_fd = mi_init_fifo_server( mi_fifo, mi_fifo_mode,
+			mi_fifo_uid, mi_fifo_gid, mi_fifo_reply_dir);
+		if ( fifo_fd < 0 ) {
+			LM_ERR("Error initializing the fifo server\n");
+			return -1;
+		}
+
+		fifo.fd = fifo_fd;
+		fifo.type = TYPE_FIFO;
+		fifo.current_comm_len = 0;
+		fifo.mi_buf_pos = 0;
 	}
 
-	fifo_fd = mi_init_fifo_server( mi_fifo, mi_fifo_mode,
-		mi_fifo_uid, mi_fifo_gid, mi_fifo_reply_dir);
-	if ( fifo_fd < 0 ) {
-		LM_ERR("Error initializing the fifo server\n");
+	if (mi_listen_port >= 0) {
+
+		socket_fd = mi_init_sock_server(mi_listen_port);
+		if (socket_fd < 0)
+		{
+			LM_ERR("Error initializing the socket server\n");
+			return -1;
+		}
+
+		sock.fd = socket_fd;
+		sock.type = TYPE_SOCKET_SERVER;
+		sock.current_comm_len = 0;
+		sock.mi_buf_pos = 0;
+	}
+
+	if (fifo_fd < 0 && socket_fd < 0) {
+		LM_ERR("Neither listen port nor fifo file specified!\n");
 		return -1;
 	}
-
-	fifo.fd = fifo_fd;
-	fifo.type = TYPE_FIFO;
-	fifo.current_comm_len = 0;
-	fifo.mi_buf_pos = 0;
-
-	socket_fd = mi_init_sock_server(mi_listen_port);
-	if (socket_fd < 0)
-	{
-		LM_ERR("Error initializing the socket server\n");
-		return -1;
-	}
-
-	sock.fd = socket_fd;
-	sock.type = TYPE_SOCKET_SERVER;
-	sock.current_comm_len = 0;
-	sock.mi_buf_pos = 0;
 
 	if ( mi_writer_init(mi_reply_indent)!=0 ) {
 		LM_CRIT("failed to init the reply writer\n");
-		exit(-1);
+		return -1;
 	}
 
-	submit_task(reactor_in,(fd_callback *)mi_listener, &fifo,
-			TASK_PRIO_READ_IO,fifo_fd,0);
-	submit_task(reactor_in,(fd_callback *)mi_listener, &sock,
-			TASK_PRIO_READ_IO,socket_fd,0);
+	if (fifo_fd > 0)
+		submit_task(reactor_in,(fd_callback *)mi_listener, &fifo,
+				TASK_PRIO_READ_IO,fifo_fd,0);
+	if (socket_fd > 0)
+		submit_task(reactor_in,(fd_callback *)mi_listener, &sock,
+				TASK_PRIO_READ_IO,socket_fd,0);
 
 	return 0;
 }
@@ -201,19 +209,22 @@ void mod_destroy(void)
 	int n;
 	struct stat filestat;
 
-	/* destroying the fifo file */
-	n=stat(mi_fifo, &filestat);
-	if (n==0){
-		/* FIFO exist, delete it (safer) */
-		if (unlink(mi_fifo)<0){
-			LM_ERR("cannot delete the fifo (%s): %s\n",
-				mi_fifo, strerror(errno));
-		}
-	} else if (n<0 && errno!=ENOENT)
-		LM_ERR("FIFO stat failed: %s\n", strerror(errno));
+	if (fifo_fd > 0) {
+		/* destroying the fifo file */
+		n=stat(mi_fifo, &filestat);
+		if (n==0){
+			/* FIFO exist, delete it (safer) */
+			if (unlink(mi_fifo)<0){
+				LM_ERR("cannot delete the fifo (%s): %s\n",
+						mi_fifo, strerror(errno));
+			}
+		} else if (n<0 && errno!=ENOENT)
+			LM_ERR("FIFO stat failed: %s\n", strerror(errno));
 
-	close(fifo_fd);
-	close(socket_fd);
+		close(fifo_fd);
+	}
+	if (socket_fd > 0)
+		close(socket_fd);
 
 	LM_DBG("mi_fifo module destroyed\n");
 
